@@ -1,0 +1,156 @@
+#!/usr/bin/env python
+
+import sys,os
+import re
+import getpass
+import codecs, json, markdown
+import requests
+
+progname = os.path.basename(__file__)
+if len(sys.argv) < 2:
+    print "usage: {0} <file.md> [ <file.md> ... ]".format(progname)
+    sys.exit(1)
+
+website = "nesi.zendesk.com"
+category_name = "Scientific Software"
+headers = { 'Content-Type' : 'application/json' }
+preferred_locale = "en-gb"
+# A business decision needs to be made - allow comments, or not?
+comments_disabled = True
+
+print "This script requires that you have a so-called default password for Zendesk"
+print "(i.e., a different password than your single sign-on password through Tuakiri)."
+print "If you do not have such a password or have forgotten it, please visit:"
+print ""
+print "      https://{0}/access/help".format(website)
+print ""
+#zdmyusername = raw_input("Please enter your Zendesk primary email address: ")
+zdmyusername = "b.roberts@auckland.ac.nz"
+zdmypassword = getpass.getpass("Please enter your Zendesk default password: ")
+
+categories_page = requests.get("https://{0}/api/v2/help_center/categories.json".format(website), auth=(zdmyusername, zdmypassword))
+# Ensure that only one category with the specified name exists
+# (Zendesk permits multiple categories with the same name for some reason)
+category_id = 0
+try:
+    for category in categories_page.json()['categories']:
+        if category['name'] == category_name:
+            if category_id == 0:
+                category_id = category['id']
+                continue
+            else:
+                print "Error: More than one category found with name \"{0}\"!".format(category_name)
+                print "Please check the knowledge-base categories at {0}.".format(website)
+                sys.exit(1)
+    if category_id == 0:
+        print "Error: No category found with name \"{0}\"!".format(category_name)
+        print "Please check the knowledge-base categories at {0}.".format(website)
+        sys.exit(1)
+except ValueError:
+    print "Could not fetch JSON data from which to compile a list of categories."
+    print "Perhaps your username and/or password was not entered correctly?"
+    sys.exit(1)
+
+#print "Uploading articles into category {0:d} with title {1} ...".format(category_id,category_name)
+
+for filename in sys.argv[1:]:
+    base_filename = os.path.basename(filename)
+    title = os.path.splitext(base_filename)[0]
+
+    file = codecs.open(filename, 'r', encoding='utf-8')
+    # The Section line should always be the very first line. 
+    section_line = file.readline()
+    section_name = re.sub(r'^[Ss]ection:\s+(.*)\n$', r'\1', section_line)
+
+    if section_name == section_line:
+        print "Warning: {0} contains no section specification on its first line.".format(filename)
+        print "Skipping."
+        continue
+
+    #print "Documentation based on the contents of {0} will be uploaded into section {1}.".format(filename, section_name)
+    sections_page = requests.get("https://{0}/api/v2/help_center/categories/{1}/sections.json".format(website,category_id), auth=(zdmyusername, zdmypassword))
+    # Ensure that, within the specified category, only one section with the
+    # specified name exists
+    section_id = 0
+    try:
+        for section in sections_page.json()['sections']:
+            if section['name'] == section_name:
+                if section_id == 0:
+                    section_id = section['id']
+                    continue
+                else:
+                    print "Warning: More than one section with name \"{0}\" found in category \"{1}\"!".format(section_name,category_name)
+                    print "Please check the knowledge-base sections in category \"{0}\" at {1}.".format(category_name,website)
+                    print "File {0} will be skipped.".format(filename)
+                    break
+        else:
+            if section_id == 0:
+                print "Warning: No section with name \"{0}\" found in category \"{1}\"!".format(section_name,category_name)
+                print "Please check the knowledge-base sections in category \"{0}\" at {1}.".format(category_name,website)
+                print "File {0} will be skipped.".format(filename)
+                continue
+    except ValueError:
+        print "Could not fetch JSON data from which to compile a list of sections. Exiting."
+        sys.exit(1)
+
+    # Find all articles in the specified section, looking for the article
+    # we're dealing with
+    article_id = 0
+    articles_url = "https://{0}/api/v2/help_center/sections/{1}/articles.json".format(website,section_id)
+    articles_page = requests.get(articles_url, auth=(zdmyusername, zdmypassword))
+    for article in articles_page.json()['articles']:
+        if article['title'] == title:
+            if article_id == 0:
+                article_id = article['id']
+                continue
+            else:
+                print "Warning: More than one article with title \"{0}\" found in section \"{1}\" in category \"{2}\"!".format(title,section_name,category_name)
+                print "Please check the knowledge-base articles in section \"{0}\" in category \"{1}\" at {2}.".format(section_name,category_name,website)
+                print "File {0} will be skipped.".format(filename)
+                break
+    else:
+        md_content = file.read()
+        html_content = markdown.markdown(md_content, output_format='html5')
+        # Fields that could be used:
+        # locale (compulsory)
+        # title (compulsory)
+        # comments_disabled (defaults to False)
+        # author_id (defaults to current user)
+        # outdated (defaults to False)
+        # draft (defaults to False)
+        # promoted (defaults to False)
+        # body
+        # position
+        # label_names
+
+        # New article
+        if article_id == 0:
+            string = 'create'
+            article_content = { 'article': {'locale':               preferred_locale,
+                                            'title':                title,
+                                            'comments_disabled':    comments_disabled,
+                                            'body':                 html_content
+                                            }
+                            }
+            updated_page = requests.post(articles_url, headers=headers, data=json.dumps(article_content), auth=(zdmyusername, zdmypassword))
+        # Existing article
+        else:
+            # Update metadata: PUT /api/v2/help_center/{locale}/articles/{id}.json
+            # Update a body: PUT /api/v2/help_center/articles/{article_id}/translations/{locale}.json
+            string = 'update'
+            article_url = "https://{0}/api/v2/help_center/articles/{1}/translations/{2}.json".format(website,article_id,preferred_locale)
+            article_content = { 'translation':{ 'title':                title,
+                                                'body':                 html_content
+                                            }
+                            }
+            updated_page = requests.put(article_url, headers=headers, data=json.dumps(article_content), auth=(zdmyusername, zdmypassword))
+
+        # Print a message
+        if updated_page.status_code < 400:
+            print "Successfully {0}d article \"{1}\" in section \"{2}\"".format(string,title,section_name)
+        else:
+            print "Request to {0} article \"{1}\" in section \"{2}\" returned error code {3}".format(string,title,section_name,updated_page.status_code)
+
+# TODO: Identify those articles that are no longer needed on Zendesk and blow them away
+# (or at least mark them as outdated).
+# DELETE /api/v2/help_center/articles/{id}.json
