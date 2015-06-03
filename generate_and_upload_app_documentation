@@ -24,8 +24,7 @@ print "If you do not have such a password or have forgotten it, please visit:"
 print ""
 print "      https://{0}/access/help".format(website)
 print ""
-#zdmyusername = raw_input("Please enter your Zendesk primary email address: ")
-zdmyusername = "b.roberts@auckland.ac.nz"
+zdmyusername = raw_input("Please enter your Zendesk primary email address: ")
 zdmypassword = getpass.getpass("Please enter your Zendesk default password: ")
 
 categories_page = requests.get("https://{0}/api/v2/help_center/categories.json".format(website), auth=(zdmyusername, zdmypassword))
