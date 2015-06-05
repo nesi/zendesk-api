@@ -27,12 +27,38 @@ print ""
 zdmyusername = raw_input("Please enter your Zendesk primary email address: ")
 zdmypassword = getpass.getpass("Please enter your Zendesk default password: ")
 
-categories_page = requests.get("https://{0}/api/v2/help_center/categories.json".format(website), auth=(zdmyusername, zdmypassword))
-# Ensure that only one category with the specified name exists
-# (Zendesk permits multiple categories with the same name for some reason)
-category_id = 0
 try:
-    for category in categories_page.json()['categories']:
+    categories_page = requests.get("https://{0}/api/v2/help_center/categories.json".format(website), auth=(zdmyusername, zdmypassword))
+    categories = categories_page.json()['categories']
+except ValueError:
+    print "Could not fetch JSON data from which to compile a list of categories."
+    print "Perhaps your username and/or password was not entered correctly?"
+    sys.exit(1)
+
+for filename in sys.argv[1:]:
+    base_filename = os.path.basename(filename)
+    title = os.path.splitext(base_filename)[0]
+
+    file = codecs.open(filename, 'r', encoding='utf-8')
+    
+    # The Category line should always be the very first line.
+    category_line = file.readline()
+    category_name = re.sub(r'^[Cc]ategory:\s+(.*)\n$', r'\1', category_line)
+    if category_name == category_line:
+        print "Warning: {0} contains no category specification on its first line.".format(filename)
+        print "Skipping."
+        continue
+
+    # The Section line should always be the second line.
+    section_line = file.readline()
+    section_name = re.sub(r'^[Ss]ection:\s+(.*)\n$', r'\1', section_line)
+    if section_name == section_line:
+        print "Warning: {0} contains no section specification on its second line.".format(filename)
+        print "Skipping."
+        continue
+
+    category_id = 0
+    for category in categories:
         if category['name'] == category_name:
             if category_id == 0:
                 category_id = category['id']
@@ -45,26 +71,6 @@ try:
         print "Error: No category found with name \"{0}\"!".format(category_name)
         print "Please check the knowledge-base categories at {0}.".format(website)
         sys.exit(1)
-except ValueError:
-    print "Could not fetch JSON data from which to compile a list of categories."
-    print "Perhaps your username and/or password was not entered correctly?"
-    sys.exit(1)
-
-#print "Uploading articles into category {0:d} with title {1} ...".format(category_id,category_name)
-
-for filename in sys.argv[1:]:
-    base_filename = os.path.basename(filename)
-    title = os.path.splitext(base_filename)[0]
-
-    file = codecs.open(filename, 'r', encoding='utf-8')
-    # The Section line should always be the very first line. 
-    section_line = file.readline()
-    section_name = re.sub(r'^[Ss]ection:\s+(.*)\n$', r'\1', section_line)
-
-    if section_name == section_line:
-        print "Warning: {0} contains no section specification on its first line.".format(filename)
-        print "Skipping."
-        continue
 
     #print "Documentation based on the contents of {0} will be uploaded into section {1}.".format(filename, section_name)
     sections_page = requests.get("https://{0}/api/v2/help_center/categories/{1}/sections.json".format(website,category_id), auth=(zdmyusername, zdmypassword))
