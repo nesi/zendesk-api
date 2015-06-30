@@ -1,5 +1,16 @@
 #!/usr/bin/env python
 
+# A generic script to take a text file in Markdown format (including HTML code
+# where appropriate) and convert it into full HTML, before uploading it to the
+# NeSI Zendesk site by means of a JSON request through the Zendesk API.
+#
+# Note that as a generic script, this script is not intended to make any
+# assumptions about the category or section the document belongs in, nor to
+# assemble the document from any source material. Any workflow making use of
+# this script should do so with that understanding.
+#
+# Author: Benjamin Roberts <ben.roberts@nesi.org.nz>
+
 import sys,os
 import re
 import getpass
@@ -12,7 +23,6 @@ if len(sys.argv) < 2:
     sys.exit(1)
 
 website = "nesi.zendesk.com"
-category_name = "Scientific Software"
 headers = { 'Content-Type' : 'application/json' }
 preferred_locale = "en-gb"
 # A business decision needs to be made - allow comments, or not?
