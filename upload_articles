@@ -66,6 +66,10 @@ for filename in sys.argv[1:]:
         print "Warning: {0} contains no section specification on its second line.".format(filename)
         print "Skipping."
         continue
+    elif re.match(r'^[Ss]tubs$', section_name):
+        print "{0} will not be uploaded, because its section is given as \"Stubs\".".format(filename)
+        print "Skipping."
+        continue
 
     category_id = 0
     for category in categories:
@@ -110,10 +114,22 @@ for filename in sys.argv[1:]:
 
     # Find all articles in the specified section, looking for the article
     # we're dealing with
+    # We have to do some fancy footwork, because the API only allows for
+    # 30 articles to be returned at a time. Fortunately, each page of 30
+    # provides a "next_page" value for going to the next page of results.
+    # See https://support.zendesk.com/hc/en-us/articles/204371903-Zendesk-REST-API-tutorial-Backing-up-your-knowledge-base
+    all_articles = []
     article_id = 0
-    articles_url = "https://{0}/api/v2/help_center/sections/{1}/articles.json".format(website,section_id)
-    articles_page = requests.get(articles_url, auth=(zdmyusername, zdmypassword))
-    for article in articles_page.json()['articles']:
+    main_articles_url = "https://{0}/api/v2/help_center/sections/{1}/articles.json".format(website,section_id)
+    articles_url = main_articles_url
+    while articles_url:
+        articles_page = requests.get(articles_url, auth=(zdmyusername, zdmypassword))
+        articles_page_content = articles_page.json()
+        for article in articles_page_content['articles']:
+            all_articles.append(article)
+        articles_url = articles_page_content['next_page']
+
+    for article in all_articles:
         if article['title'] == title:
             if article_id == 0:
                 article_id = article['id']
@@ -137,7 +153,7 @@ for filename in sys.argv[1:]:
         # body
         # position
         # label_names
-
+ 
         # New article
         if article_id == 0:
             string = 'create'
@@ -147,7 +163,7 @@ for filename in sys.argv[1:]:
                                             'body':                 html_content
                                             }
                             }
-            updated_page = requests.post(articles_url, headers=headers, data=json.dumps(article_content), auth=(zdmyusername, zdmypassword))
+            updated_page = requests.post(main_articles_url, headers=headers, data=json.dumps(article_content), auth=(zdmyusername, zdmypassword))
         # Existing article
         else:
             # Update metadata: PUT /api/v2/help_center/{locale}/articles/{id}.json
