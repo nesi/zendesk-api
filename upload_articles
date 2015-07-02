@@ -67,7 +67,7 @@ for filename in sys.argv[1:]:
         print "Skipping."
         continue
     elif re.match(r'^[Ss]tubs$', section_name):
-        print "{0} will not be uploaded, because its section is given as \"Stubs\".".format(filename)
+        print "{0} will not be uploaded, because its section is given as \"{1}\".".format(filename,section_name)
         print "Skipping."
         continue
 
