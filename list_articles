@@ -1,0 +1,101 @@
+#!/usr/bin/env python
+
+# A generic script to take a text file in Markdown format (including HTML code
+# where appropriate) and convert it into full HTML, before uploading it to the
+# NeSI Zendesk site by means of a JSON request through the Zendesk API.
+#
+# Note that as a generic script, this script is not intended to make any
+# assumptions about the category or section the document belongs in, nor to
+# assemble the document from any source material. Any workflow making use of
+# this script should do so with that understanding.
+#
+# Author: Benjamin Roberts <ben.roberts@nesi.org.nz>
+
+import sys,os
+import re
+import getopt
+import getpass
+import json
+import requests
+
+ok = 0
+warning = 1
+critical = 2
+unknown = 3
+
+progname = os.path.basename(__file__)
+output_file = None
+
+try:
+    opts, args = getopt.getopt(sys.argv[1:], "o:", ["output-file="])
+except getopt.GetoptError as err:
+    print str(err)
+    usage()
+    raise SystemExit(critical)
+
+for (opt, arg) in opts:
+    if opt in ("-o", "--output-file"):
+        output_file = arg
+    else:
+        assert False, "Unhandled option: {}".format(opt)
+
+print "Output file: {0}".format(output_file)
+
+if not output_file:
+    print """Please specify an output file using the -o flag"""
+    raise SystemExit(critical)
+
+website = "nesi.zendesk.com"
+headers = { 'Content-Type' : 'application/json' }
+preferred_locale = "en-gb"
+
+print "This script requires that you have a so-called default password for Zendesk"
+print "(i.e., a different password than your single sign-on password through Tuakiri)."
+print "If you do not have such a password or have forgotten it, please visit:"
+print ""
+print "      https://{0}/access/help".format(website)
+print ""
+zdmyusername = raw_input("Please enter your Zendesk primary email address: ")
+zdmypassword = getpass.getpass("Please enter your Zendesk default password: ")
+
+all_categories = []
+main_categories_url = "https://{0}/api/v2/help_center/categories.json".format(website)
+categories_url = main_categories_url
+while categories_url:
+    categories_page_content = requests.get(categories_url, auth=(zdmyusername, zdmypassword)).json()
+    for category in categories_page_content['categories']:
+        all_categories.append(category)
+    categories_url = categories_page_content['next_page']
+
+all_sections = []
+main_sections_url = "https://{0}/api/v2/help_center/sections.json".format(website)
+sections_url = main_sections_url
+while sections_url:
+    sections_page_content = requests.get(sections_url, auth=(zdmyusername, zdmypassword)).json()
+    for section in sections_page_content['sections']:
+        all_sections.append(section)
+    sections_url = sections_page_content['next_page']
+
+with open(output_file, 'w') as output_fh:
+    for section in all_sections:
+
+        category_name = ''
+        articles_in_this_section = []
+    
+        for category in all_categories:
+            if category['id'] == section['category_id']:
+                category_name = category['name']
+                break
+            else:
+                continue
+
+        main_articles_url = "https://{0}/api/v2/help_center/sections/{1}/articles.json".format(website,section['id'])
+        articles_url = main_articles_url
+        while articles_url:
+            articles_page_content = requests.get(articles_url, auth=(zdmyusername, zdmypassword)).json()
+            for article in articles_page_content['articles']:
+                articles_in_this_section.append(article)
+            articles_url = articles_page_content['next_page']
+
+        for article in articles_in_this_section:
+            output_fh.write("{0}\t{1}\t{2}\t{3}\t{4}\t{5}\n".format(article['id'],category_name,section['name'],article['title'],article['draft'],article['outdated']))

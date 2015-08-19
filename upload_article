@@ -181,7 +181,3 @@ for filename in sys.argv[1:]:
             print "Successfully {0}d article \"{1}\" in section \"{2}\"".format(string,title,section_name)
         else:
             print "Request to {0} article \"{1}\" in section \"{2}\" returned error code {3}".format(string,title,section_name,updated_page.status_code)
-
-# TODO: Identify those articles that are no longer needed on Zendesk and blow them away
-# (or at least mark them as outdated).
-# DELETE /api/v2/help_center/articles/{id}.json
