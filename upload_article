@@ -47,7 +47,6 @@ except ValueError:
 
 for filename in sys.argv[1:]:
     base_filename = os.path.basename(filename)
-    title = os.path.splitext(base_filename)[0]
 
     file = codecs.open(filename, 'r', encoding='utf-8')
     
@@ -68,6 +67,14 @@ for filename in sys.argv[1:]:
         continue
     elif re.match(r'^[Ss]tubs$', section_name):
         print "{0} will not be uploaded, because its section is given as \"{1}\".".format(filename,section_name)
+        print "Skipping."
+        continue
+
+    # The Title line should always be the third line.
+    title_line = file.readline()
+    title_text = re.sub(r'^[Tt]itle:\s+(.*)\n$', r'\1', title_line)
+    if title_text == title_line:
+        print "Warning: {0} contains no title specification on its third line.".format(filename)
         print "Skipping."
         continue
 
@@ -130,12 +137,12 @@ for filename in sys.argv[1:]:
         articles_url = articles_page_content['next_page']
 
     for article in all_articles:
-        if article['title'] == title:
+        if article['title'] == title_text:
             if article_id == 0:
                 article_id = article['id']
                 continue
             else:
-                print "Warning: More than one article with title \"{0}\" found in section \"{1}\" in category \"{2}\"!".format(title,section_name,category_name)
+                print "Warning: More than one article with title \"{0}\" found in section \"{1}\" in category \"{2}\"!".format(title_text,section_name,category_name)
                 print "Please check the knowledge-base articles in section \"{0}\" in category \"{1}\" at {2}.".format(section_name,category_name,website)
                 print "File {0} will be skipped.".format(filename)
                 break
@@ -158,7 +165,7 @@ for filename in sys.argv[1:]:
         if article_id == 0:
             string = 'create'
             article_content = { 'article': {'locale':               preferred_locale,
-                                            'title':                title,
+                                            'title':                title_text,
                                             'comments_disabled':    comments_disabled,
                                             'body':                 html_content
                                             }
@@ -170,7 +177,7 @@ for filename in sys.argv[1:]:
             # Update a body: PUT /api/v2/help_center/articles/{article_id}/translations/{locale}.json
             string = 'update'
             article_url = "https://{0}/api/v2/help_center/articles/{1}/translations/{2}.json".format(website,article_id,preferred_locale)
-            article_content = { 'translation':{ 'title':                title,
+            article_content = { 'translation':{ 'title':                title_text,
                                                 'body':                 html_content
                                             }
                             }
@@ -178,6 +185,6 @@ for filename in sys.argv[1:]:
 
         # Print a message
         if updated_page.status_code < 400:
-            print "Successfully {0}d article \"{1}\" in section \"{2}\"".format(string,title,section_name)
+            print "Successfully {0}d article \"{1}\" in section \"{2}\"".format(string,title_text,section_name)
         else:
-            print "Request to {0} article \"{1}\" in section \"{2}\" returned error code {3}".format(string,title,section_name,updated_page.status_code)
+            print "Request to {0} article \"{1}\" in section \"{2}\" returned error code {3}".format(string,title_text,section_name,updated_page.status_code)
