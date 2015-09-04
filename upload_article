@@ -148,7 +148,7 @@ for filename in sys.argv[1:]:
                 break
     else:
         md_content = file.read()
-        html_content = markdown.markdown(md_content, output_format='html5')
+        html_content = markdown.markdown(md_content, output_format='html5', extensions=['markdown.extensions.fenced_code'])
         # Fields that could be used:
         # locale (compulsory)
         # title (compulsory)
