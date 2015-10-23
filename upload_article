@@ -17,10 +17,14 @@ import getpass
 import codecs, json, markdown
 import requests
 
+ok = 0
+warning = 1
+critical = 2
+
 progname = os.path.basename(__file__)
 if len(sys.argv) < 2:
     print "usage: {0} <file.md> [ <file.md> ... ]".format(progname)
-    sys.exit(1)
+    sys.exit(critical)
 
 website = "nesi.zendesk.com"
 headers = { 'Content-Type' : 'application/json' }
@@ -37,13 +41,23 @@ print ""
 zdmyusername = raw_input("Please enter your Zendesk primary email address: ")
 zdmypassword = getpass.getpass("Please enter your Zendesk default password: ")
 
-try:
-    categories_page = requests.get("https://{0}/api/v2/help_center/categories.json".format(website), auth=(zdmyusername, zdmypassword))
-    categories = categories_page.json()['categories']
-except ValueError:
-    print "Could not fetch JSON data from which to compile a list of categories."
-    print "Perhaps your username and/or password was not entered correctly?"
-    sys.exit(1)
+categories = []
+main_categories_url = "https://{0}/api/v2/help_center/categories.json".format(website)
+categories_url = main_categories_url
+while categories_url:
+    try:
+        categories_page = requests.get(categories_url, auth=(zdmyusername, zdmypassword))
+        categories_page_content = categories_page.json()
+    except ValueError:
+        print "Could not fetch JSON data from which to compile a list of categories. Exiting."
+        sys.exit(critical)
+    for category in categories_page_content['categories']:
+        categories.append(category)
+    categories_url = categories_page_content['next_page']
+
+successful_uploads = 0
+deliberate_skips = 0
+error_skips = 0
 
 for filename in sys.argv[1:]:
     base_filename = os.path.basename(filename)
@@ -54,28 +68,32 @@ for filename in sys.argv[1:]:
     category_line = file.readline()
     category_name = re.sub(r'^[Cc]ategory:\s+(.*)\n$', r'\1', category_line)
     if category_name == category_line:
-        print "Warning: {0} contains no category specification on its first line.".format(filename)
-        print "Skipping."
+        print "{0} contains no category specification on its first line. Skipping.".format(filename)
+        error_skips += 1
+        continue
+    elif re.match(r'^[Nn]one$', category_name):
+        print "{0} will not be uploaded, because its category is given as \"{1}\". Skipping.".format(filename,category_name)
+        deliberate_skips += 1
         continue
 
     # The Section line should always be the second line.
     section_line = file.readline()
     section_name = re.sub(r'^[Ss]ection:\s+(.*)\n$', r'\1', section_line)
     if section_name == section_line:
-        print "Warning: {0} contains no section specification on its second line.".format(filename)
-        print "Skipping."
+        print "{0} contains no section specification on its second line. Skipping.".format(filename)
+        error_skips += 1
         continue
-    elif re.match(r'^[Ss]tubs$', section_name):
-        print "{0} will not be uploaded, because its section is given as \"{1}\".".format(filename,section_name)
-        print "Skipping."
+    elif re.match(r'^[Ss]tubs$|^[Nn]one$', section_name):
+        print "{0} will not be uploaded, because its section is given as \"{1}\". Skipping.".format(filename,section_name)
+        deliberate_skips += 1
         continue
 
     # The Title line should always be the third line.
     title_line = file.readline()
     title_text = re.sub(r'^[Tt]itle:\s+(.*)\n$', r'\1', title_line)
     if title_text == title_line:
-        print "Warning: {0} contains no title specification on its third line.".format(filename)
-        print "Skipping."
+        print "{0} contains no title specification on its third line. Skipping.".format(filename)
+        error_skips += 1
         continue
 
     category_id = 0
@@ -87,104 +105,149 @@ for filename in sys.argv[1:]:
             else:
                 print "Error: More than one category found with name \"{0}\"!".format(category_name)
                 print "Please check the knowledge-base categories at {0}.".format(website)
-                sys.exit(1)
-    if category_id == 0:
-        print "Error: No category found with name \"{0}\"!".format(category_name)
-        print "Please check the knowledge-base categories at {0}.".format(website)
-        sys.exit(1)
-
-    #print "Documentation based on the contents of {0} will be uploaded into section {1}.".format(filename, section_name)
-    sections_page = requests.get("https://{0}/api/v2/help_center/categories/{1}/sections.json".format(website,category_id), auth=(zdmyusername, zdmypassword))
-    # Ensure that, within the specified category, only one section with the
-    # specified name exists
-    section_id = 0
-    try:
-        for section in sections_page.json()['sections']:
-            if section['name'] == section_name:
-                if section_id == 0:
-                    section_id = section['id']
-                    continue
-                else:
-                    print "Warning: More than one section with name \"{0}\" found in category \"{1}\"!".format(section_name,category_name)
-                    print "Please check the knowledge-base sections in category \"{0}\" at {1}.".format(category_name,website)
-                    print "File {0} will be skipped.".format(filename)
-                    break
-        else:
-            if section_id == 0:
-                print "Warning: No section with name \"{0}\" found in category \"{1}\"!".format(section_name,category_name)
-                print "Please check the knowledge-base sections in category \"{0}\" at {1}.".format(category_name,website)
-                print "File {0} will be skipped.".format(filename)
-                continue
-    except ValueError:
-        print "Could not fetch JSON data from which to compile a list of sections. Exiting."
-        sys.exit(1)
-
-    # Find all articles in the specified section, looking for the article
-    # we're dealing with
-    # We have to do some fancy footwork, because the API only allows for
-    # 30 articles to be returned at a time. Fortunately, each page of 30
-    # provides a "next_page" value for going to the next page of results.
-    # See https://support.zendesk.com/hc/en-us/articles/204371903-Zendesk-REST-API-tutorial-Backing-up-your-knowledge-base
-    all_articles = []
-    article_id = 0
-    main_articles_url = "https://{0}/api/v2/help_center/sections/{1}/articles.json".format(website,section_id)
-    articles_url = main_articles_url
-    while articles_url:
-        articles_page = requests.get(articles_url, auth=(zdmyusername, zdmypassword))
-        articles_page_content = articles_page.json()
-        for article in articles_page_content['articles']:
-            all_articles.append(article)
-        articles_url = articles_page_content['next_page']
-
-    for article in all_articles:
-        if article['title'] == title_text:
-            if article_id == 0:
-                article_id = article['id']
-                continue
-            else:
-                print "Warning: More than one article with title \"{0}\" found in section \"{1}\" in category \"{2}\"!".format(title_text,section_name,category_name)
-                print "Please check the knowledge-base articles in section \"{0}\" in category \"{1}\" at {2}.".format(section_name,category_name,website)
-                print "File {0} will be skipped.".format(filename)
+                print "The file {0} will be skipped.".format(filename)
+                error_skips += 1
                 break
     else:
-        md_content = file.read()
-        html_content = markdown.markdown(md_content, output_format='html5', extensions=['markdown.extensions.fenced_code'])
-        # Fields that could be used:
-        # locale (compulsory)
-        # title (compulsory)
-        # comments_disabled (defaults to False)
-        # author_id (defaults to current user)
-        # outdated (defaults to False)
-        # draft (defaults to False)
-        # promoted (defaults to False)
-        # body
-        # position
-        # label_names
- 
-        # New article
-        if article_id == 0:
-            string = 'create'
-            article_content = { 'article': {'locale':               preferred_locale,
-                                            'title':                title_text,
-                                            'comments_disabled':    comments_disabled,
-                                            'body':                 html_content
-                                            }
-                            }
-            updated_page = requests.post(main_articles_url, headers=headers, data=json.dumps(article_content), auth=(zdmyusername, zdmypassword))
-        # Existing article
+        if category_id == 0:
+            print "Warning: \"{0}\": no such knowledge-base category.".format(category_name)
+            print "Please check the knowledge-base categories at {0}.".format(website)
+            print "The file {0} will be skipped.".format(filename)
+            error_skips += 1
+            continue
         else:
-            # Update metadata: PUT /api/v2/help_center/{locale}/articles/{id}.json
-            # Update a body: PUT /api/v2/help_center/articles/{article_id}/translations/{locale}.json
-            string = 'update'
-            article_url = "https://{0}/api/v2/help_center/articles/{1}/translations/{2}.json".format(website,article_id,preferred_locale)
-            article_content = { 'translation':{ 'title':                title_text,
-                                                'body':                 html_content
-                                            }
-                            }
-            updated_page = requests.put(article_url, headers=headers, data=json.dumps(article_content), auth=(zdmyusername, zdmypassword))
+            sections_in_category = []
+            main_sections_url = "https://{0}/api/v2/help_center/categories/{1}/sections.json".format(website,category_id)
+            sections_url = main_sections_url
+            while sections_url:
+                try:
+                    sections_page = requests.get(sections_url, auth=(zdmyusername, zdmypassword))
+                    sections_page_content = sections_page.json()
+                except ValueError:
+                    print "Could not fetch JSON data from which to compile a list of sections. Exiting."
+                    sys.exit(critical)
+                for section in sections_page_content['sections']:
+                    sections_in_category.append(section)
+                sections_url = sections_page_content['next_page']
 
-        # Print a message
-        if updated_page.status_code < 400:
-            print "Successfully {0}d article \"{1}\" in section \"{2}\"".format(string,title_text,section_name)
-        else:
-            print "Request to {0} article \"{1}\" in section \"{2}\" returned error code {3}".format(string,title_text,section_name,updated_page.status_code)
+            # Ensure that, within the specified category, only one section with the
+            # specified name exists
+            section_id = 0
+            for section in sections_in_category:
+                if section['name'] == section_name:
+                    if section_id == 0:
+                        section_id = section['id']
+                        continue
+                    else:
+                        print "Warning: More than one section with name \"{0}\" found in category \"{1}\"!".format(section_name,category_name)
+                        print "Please check the knowledge-base sections in category \"{0}\" at {1}.".format(category_name,website)
+                        print "File {0} will be skipped.".format(filename)
+                        error_skips += 1
+                        break
+            else:
+                if section_id == 0:
+                    print "No section with name \"{0}\" found in category \"{1}\"!".format(section_name,category_name)
+                    print "Please check the knowledge-base sections in category \"{0}\" at {1}.".format(category_name,website)
+                    print "File {0} will be skipped.".format(filename)
+                    error_skips += 1
+                    continue
+                else: 
+                    # Find all articles in the specified section, looking for the article
+                    # we're dealing with
+                    # We have to do some fancy footwork, because the API only allows for
+                    # 30 articles to be returned at a time. Fortunately, each page of 30
+                    # provides a "next_page" value for going to the next page of results.
+                    # See https://support.zendesk.com/hc/en-us/articles/204371903-Zendesk-REST-API-tutorial-Backing-up-your-knowledge-base
+                    articles_in_section = []
+                    main_articles_url = "https://{0}/api/v2/help_center/sections/{1}/articles.json".format(website,section_id)
+                    articles_url = main_articles_url
+                    while articles_url:
+                        try:
+                            articles_page = requests.get(articles_url, auth=(zdmyusername, zdmypassword))
+                            articles_page_content = articles_page.json()
+                        except ValueError:
+                            print "Could not fetch JSON data from which to compile a list of articles. Exiting."
+                            sys.exit(critical)
+                        for article in articles_page_content['articles']:
+                            articles_in_section.append(article)
+                        articles_url = articles_page_content['next_page']
+
+                    article_id = 0
+                    for article in articles_in_section:
+                        if article['title'] == title_text:
+                            if article_id == 0:
+                                article_id = article['id']
+                                continue
+                            else:
+                                print "Warning: More than one article with title \"{0}\" found in section \"{1}\" in category \"{2}\"!".format(title_text,section_name,category_name)
+                                print "Please check the knowledge-base articles in section \"{0}\" in category \"{1}\" at {2}.".format(section_name,category_name,website)
+                                print "File {0} will be skipped.".format(filename)
+                                error_skips += 1
+                                break
+                    else:
+                        md_content = file.read()
+                        html_content = markdown.markdown(md_content, output_format='html5', extensions=['markdown.extensions.fenced_code', 'markdown.extensions.toc'])
+                        # Fields that could be used:
+                        # locale (compulsory)
+                        # title (compulsory)
+                        # comments_disabled (defaults to False)
+                        # author_id (defaults to current user)
+                        # outdated (defaults to False)
+                        # draft (defaults to False)
+                        # promoted (defaults to False)
+                        # body
+                        # position
+                        # label_names
+ 
+                        # New article
+                        if article_id == 0:
+                            string = 'create'
+                            article_content = { 'article': {'locale':               preferred_locale,
+                                                            'title':                title_text,
+                                                            'comments_disabled':    comments_disabled,
+                                                            'body':                 html_content
+                                                            }
+                                            }
+                            updated_page = requests.post(main_articles_url, headers=headers, data=json.dumps(article_content), auth=(zdmyusername, zdmypassword))
+                        # Existing article
+                        else:
+                            # Update metadata: PUT /api/v2/help_center/{locale}/articles/{id}.json
+                            # Update a body: PUT /api/v2/help_center/articles/{article_id}/translations/{locale}.json
+                            string = 'update'
+                            article_url = "https://{0}/api/v2/help_center/articles/{1}/translations/{2}.json".format(website,article_id,preferred_locale)
+                            article_content = { 'translation':{ 'title':                title_text,
+                                                                'body':                 html_content
+                                                            }
+                                            }
+                            updated_page = requests.put(article_url, headers=headers, data=json.dumps(article_content), auth=(zdmyusername, zdmypassword))
+
+                        # Print a message
+                        if updated_page.status_code < 400:
+                            print "Successfully {0}d article \"{1}\" in section \"{2}\"".format(string,title_text,section_name)
+                            successful_uploads += 1
+                        else:
+                            print "Request to {0} article \"{1}\" in section \"{2}\" returned error code {3}".format(string,title_text,section_name,updated_page.status_code)
+                            error_skips += 1
+
+success_string = "successfully uploaded"
+skip_string = "skipped due to being in category None, section None, or section Stubs"
+if successful_uploads == 1:
+    print "One article was {0}.".format(success_string)
+else:
+    print "{0} articles were {1}.".format(successful_uploads, success_string)
+
+if deliberate_skips == 1:
+    print "One article was {0}.".format(skip_string)
+else:
+    print "{0} articles were {1}.".format(deliberate_skips, skip_string)
+
+if error_skips == 1:
+    print "One article was skipped due to an error."
+else:
+    print "{0} articles were skipped due to errors.".format(error_skips)
+
+if deliberate_skips > 0 or error_skips > 0:
+    print "Please review output for details."
+
+if error_skips > 0:
+    sys.exit(warning)
