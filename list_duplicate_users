@@ -1,0 +1,131 @@
+#!/usr/bin/env python
+
+# Get a list of users in Zendesk.
+#
+# Author: Benjamin Roberts <ben.roberts@nesi.org.nz>
+
+import sys,os
+import re
+import getpass
+import codecs, json
+import requests
+
+progname = os.path.basename(__file__)
+#sys.stdout = codecs.getwriter('utf8')(sys.stdout)
+
+website = "nesi.zendesk.com"
+headers = { 'Content-Type' : 'application/json' }
+preferred_locale = "en-gb"
+
+print "This script requires that you have a so-called default password for Zendesk"
+print "(i.e., a different password than your single sign-on password through Tuakiri)."
+print "If you do not have such a password or have forgotten it, please visit:"
+print ""
+print "      https://{0}/access/help".format(website)
+print ""
+#zdmyusername = raw_input("Please enter your Zendesk primary email address: ")
+zdmyusername="robertsb@landcareresearch.co.nz"
+zdmypassword = getpass.getpass("Please enter your Zendesk default password: ")
+
+allusers = []
+whitelist = [
+        'LEAP Australia Support Desk',
+        'Nagios, the Pan cluster monitor',
+        'NIWA Service Desk',
+        'Scion Help Desk',
+        'The nesi.apps user on the Pan login node',
+        'The root user on the Pan login node',
+        'Trust/Link Notifications',
+        'Tuakiri Notifications',
+        'Tuakiri Support',
+        'University of Auckland IT Operations Centre',
+        'University of Auckland Service Desk',
+        'University of Auckland Staff Service Centre',
+        'Zendesk Support',
+        ]
+
+suffixes = ['Jr.', 'Jr', 'Sr.', 'Sr', 'III.', 'III', '(Personal)']
+
+canonical_firstnames = {
+        'Ben': 'Benjamin',
+        'Chris': 'Christopher',
+        'Dave': 'David',
+        'Matt': 'Matthew',
+        'Mike': 'Michael',
+        'Pete': 'Peter',
+        'Rob': 'Robert',
+        'Tim': 'Timothy'
+        }
+
+main_users_url = "https://{0}/api/v2/users.json".format(website)
+users_url = main_users_url
+while users_url:
+    try:
+        users_page = requests.get(users_url, auth=(zdmyusername, zdmypassword))
+    except ValueError:
+        print "Could not fetch JSON data from which to compile a list of users."
+        print "Perhaps your username and/or password was not entered correctly?"
+        sys.exit(1)
+    users_page_content = users_page.json()
+    try:
+        for user in users_page_content['users']:
+            allusers.append({'id': user['id'], 'name': user['name']})
+    except KeyError:
+        print "Could not fetch JSON data from which to compile a list of users."
+        print "Perhaps your username and/or password was not entered correctly?"
+        sys.exit(1)
+    users_url = users_page_content['next_page']
+
+# Perform some name integrity checks and canonicalise names
+for user in allusers:
+    name_components = user['name'].split()
+    user['firstname'] = name_components[0]
+    try:
+        user['canonical_firstname'] = canonical_firstnames[user['firstname']]
+    except KeyError:
+        user['canonical_firstname'] = user['firstname']
+    for wl_entry in whitelist:
+        if user['name'] == wl_entry:
+            user['surname'] = None
+            break
+    else:
+        if len(name_components) > 2:
+            for suffix in suffixes:
+                if name_components[len(name_components)-1] == suffix:
+                    name_components[len(name_components)-2] = re.sub(r',$', '', name_components[len(name_components)-2])
+                    user['surname'] = name_components[len(name_components)-2]
+                    print "Found suffixed name \"{0}\" -- assuming surname of \"{1}\"".format(user['name'],user['surname'])
+                    break
+            else:
+                user['surname'] = name_components[len(name_components)-1]
+        elif len(name_components) > 1:
+            user['surname'] = name_components[len(name_components)-1]
+        else:
+            user['surname'] = None
+
+        revised_name = ' '.join(name_components)
+        (swapped_name, count) = re.subn(r'^([^,]+),\s*([^,]+)$', r'\2 \1', revised_name)
+        if count != 0:
+            print "Error: User {0} found with comma in name. Canonical name: {1}?".format(user['name'], swapped_name)
+            print "Please correct in Zendesk or add to whitelist."
+            sys.exit(1)
+        
+for userone in allusers:
+    for usertwo in allusers:
+        if userone['id'] >= usertwo['id']:
+            continue
+        try:
+            if (userone['surname'] is None and usertwo['surname'] is None and re.search(r'\s', userone['name']) is not None):
+                if (userone['name'] == usertwo['name']):
+                    print "Suspected duplicates:"
+                    print userone
+                    print usertwo
+            elif (userone['surname'] is not None and userone['surname'] == usertwo['surname']):
+                #if userone['firstname'].lower() == usertwo['firstname'].lower() or userone['canonical_firstname'].lower() == usertwo['canonical_firstname'].lower():
+                print "Suspected duplicates:"
+                print userone
+                print usertwo
+        except KeyError:
+            print "Error!"
+            print userone
+            print usertwo
