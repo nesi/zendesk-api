@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Get a list of users in Zendesk.
+# Get a list of suspected duplicate users in Zendesk.
 #
 # Author: Benjamin Roberts <ben.roberts@nesi.org.nz>
 
@@ -23,8 +23,7 @@ print "If you do not have such a password or have forgotten it, please visit:"
 print ""
 print "      https://{0}/access/help".format(website)
 print ""
-#zdmyusername = raw_input("Please enter your Zendesk primary email address: ")
-zdmyusername="robertsb@landcareresearch.co.nz"
+zdmyusername = raw_input("Please enter your Zendesk primary email address: ")
 zdmypassword = getpass.getpass("Please enter your Zendesk default password: ")
 
 allusers = []
@@ -49,12 +48,14 @@ suffixes = ['Jr.', 'Jr', 'Sr.', 'Sr', 'III.', 'III', '(Personal)']
 canonical_firstnames = {
         'Ben': 'Benjamin',
         'Chris': 'Christopher',
+        'Dan': 'Daniel',
         'Dave': 'David',
         'Matt': 'Matthew',
         'Mike': 'Michael',
         'Pete': 'Peter',
         'Rob': 'Robert',
-        'Tim': 'Timothy'
+        'Tim': 'Timothy',
+        'Tom': 'Thomas'
         }
 
 main_users_url = "https://{0}/api/v2/users.json".format(website)
@@ -115,16 +116,15 @@ for userone in allusers:
         if userone['id'] >= usertwo['id']:
             continue
         try:
-            if (userone['surname'] is None and usertwo['surname'] is None and re.search(r'\s', userone['name']) is not None):
-                if (userone['name'] == usertwo['name']):
-                    print "Suspected duplicates:"
+            if userone['surname'] is None and usertwo['surname'] is None:
+                if re.search(r'\s', userone['name']) is not None and userone['name'] == usertwo['name']:
+                    print "Suspected duplicates: \"{0}\" ({1}), \"{2}\" ({3})".format(userone['name'], userone['id'], usertwo['name'], usertwo['id'])
                     print userone
                     print usertwo
-            elif (userone['surname'] is not None and userone['surname'] == usertwo['surname']):
-                #if userone['firstname'].lower() == usertwo['firstname'].lower() or userone['canonical_firstname'].lower() == usertwo['canonical_firstname'].lower():
-                print "Suspected duplicates:"
-                print userone
-                print usertwo
+            elif userone['surname'] == usertwo['surname']:
+                # Compare only the first three characters of the first names and the canonical first names
+                if userone['firstname'][:3].lower() == usertwo['firstname'][:3].lower() or userone['canonical_firstname'][:3].lower() == usertwo['canonical_firstname'][:3].lower():
+                    print "Suspected duplicates: \"{0}\" ({1}), \"{2}\" ({3})".format(userone['name'], userone['id'], usertwo['name'], usertwo['id'])
         except KeyError:
             print "Error!"
             print userone
