@@ -15,8 +15,6 @@ echo "as a URL of the following kind:"
 echo ""
 echo "      https://${website}/agent/users/<numeric_ID>[/...]"
 echo ""
-echo -n "Please enter the user's Zendesk numeric ID: "
-read zdtargetuserid
 
 echo -n "Please enter your Zendesk primary email address: "
 read zdmyusername
@@ -24,10 +22,16 @@ read zdmyusername
 echo -n "Please enter your Zendesk default password: "
 read -s zdmypassword
 
+echo -n "Please enter the user's Zendesk numeric ID: "
+read zdtargetuserid
+
+echo -n "Please enter a replacement external ID (blank to delete): "
+read extid
+
 curl -v \
        	-u "${zdmyusername}:${zdmypassword}" \
 	https://${website}/api/v2/users/${zdtargetuserid}.json \
 	-H "Content-Type: application/json" \
 	-X PUT \
-	-d '{"user": {"external_id": ""}}'
+	-d "{\"user\": {\"external_id\": \"${extid}\"}}"
 echo ""
