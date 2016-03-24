@@ -81,6 +81,7 @@ while users_url:
 for user in allusers:
     name_components = user['name'].split()
     user['firstname'] = name_components[0]
+    user['middlenames'] = None
     try:
         user['canonical_firstname'] = canonical_firstnames[user['firstname']]
     except KeyError:
@@ -92,22 +93,29 @@ for user in allusers:
     else:
         if len(name_components) > 2:
             for suffix in suffixes:
-                if name_components[len(name_components)-1] == suffix:
-                    name_components[len(name_components)-2] = re.sub(r',$', '', name_components[len(name_components)-2])
-                    user['surname'] = name_components[len(name_components)-2]
+                if name_components[-1] == suffix:
+                    name_components[-2] = re.sub(r',$', '', name_components[-2])
+                    user['surname'] = name_components[-2]
+                    if len(name_components) > 3:
+                        user['middlenames'] = name_components[1:-2]
                     print "Found suffixed name \"{0}\" -- assuming surname of \"{1}\"".format(user['name'],user['surname'])
                     break
             else:
-                user['surname'] = name_components[len(name_components)-1]
+                user['surname'] = name_components[-1]
+                user['middlenames'] = name_components[1:-1]
         elif len(name_components) > 1:
-            user['surname'] = name_components[len(name_components)-1]
+            user['surname'] = name_components[-1]
         else:
             user['surname'] = None
 
         revised_name = ' '.join(name_components)
-        (swapped_name, count) = re.subn(r'^([^,]+),\s*([^,]+)$', r'\2 \1', revised_name)
-        if count != 0:
-            print "Error: User {0} found with comma in name. Canonical name: {1}?".format(user['name'], swapped_name)
+        commacount = revised_name.count(',')
+        if commacount > 0:
+            if commacount > 1:
+                print "Error: User {0} found with multiple commas in name!".format(user['name'])
+            else:
+                swapped_name = re.subn(r'^([^,]+),\s*([^,]+)$', r'\2 \1', revised_name)
+                print "Error: User {0} found with precisely one comma in name. Canonical name: {1}?".format(user['name'], swapped_name)
             print "Please correct in Zendesk or add to whitelist."
             sys.exit(1)
         
@@ -119,12 +127,25 @@ for userone in allusers:
             if userone['surname'] is None and usertwo['surname'] is None:
                 if re.search(r'\s', userone['name']) is not None and userone['name'] == usertwo['name']:
                     print "Suspected duplicates: \"{0}\" ({1}), \"{2}\" ({3})".format(userone['name'], userone['id'], usertwo['name'], usertwo['id'])
-                    print userone
-                    print usertwo
             elif userone['surname'] == usertwo['surname']:
                 # Compare only the first three characters of the first names and the canonical first names
+                # Also compare middle names (if they are defined)
                 if userone['firstname'][:3].lower() == usertwo['firstname'][:3].lower() or userone['canonical_firstname'][:3].lower() == usertwo['canonical_firstname'][:3].lower():
+                    if userone['middlenames'] is not None and usertwo['middlenames'] is not None:
+                        mn_mismatch = False
+                        maxmiddlenames = max([len(userone['middlenames']), len(usertwo['middlenames'])])
+                        for mn in range(maxmiddlenames):
+                            try:
+                                if userone['middlenames'][mn][0].lower() != usertwo['middlenames'][mn][0].lower():
+                                    mn_mismatch = True
+                                    break
+                            except ValueError:
+                                break
+                        if mn_mismatch:
+                            continue
                     print "Suspected duplicates: \"{0}\" ({1}), \"{2}\" ({3})".format(userone['name'], userone['id'], usertwo['name'], usertwo['id'])
+                        
+                        
         except KeyError:
             print "Error!"
             print userone
