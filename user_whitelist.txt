@@ -1,0 +1,13 @@
+LEAP Australia Support Desk
+Nagios, the Pan cluster monitor
+NIWA Service Desk
+Scion Help Desk
+The nesi.apps user on the Pan login node
+The root user on the Pan login node
+Trust/Link Notifications
+Tuakiri Notifications
+Tuakiri Support
+University of Auckland IT Operations Centre
+University of Auckland Service Desk
+University of Auckland Staff Service Centre
+Zendesk Support

@@ -10,39 +10,24 @@ import getpass
 import codecs, json
 import requests
 
+progdir = os.path.dirname(__file__)
 progname = os.path.basename(__file__)
+uwf = os.path.join(progdir, 'user_whitelist.txt')
+dwf = os.path.join(progdir, 'duplicate_user_whitelist.txt')
 #sys.stdout = codecs.getwriter('utf8')(sys.stdout)
 
-website = "nesi.zendesk.com"
-headers = { 'Content-Type' : 'application/json' }
-preferred_locale = "en-gb"
+with open(uwf) as uwfh:
+    user_whitelist = uwfh.read().splitlines()
+duplicate_user_whitelist = []
+with open(dwf) as dwfh:
+    for line in dwfh:
+        pair = line.rstrip().split('\t')
+        pair.sort(key=int)
+        duplicate_user_whitelist.append(pair)
 
-print "This script requires that you have a so-called default password for Zendesk"
-print "(i.e., a different password than your single sign-on password through Tuakiri)."
-print "If you do not have such a password or have forgotten it, please visit:"
-print ""
-print "      https://{0}/access/help".format(website)
-print ""
-zdmyusername = raw_input("Please enter your Zendesk primary email address: ")
-zdmypassword = getpass.getpass("Please enter your Zendesk default password: ")
+print duplicate_user_whitelist
 
 allusers = []
-whitelist = [
-        'LEAP Australia Support Desk',
-        'Nagios, the Pan cluster monitor',
-        'NIWA Service Desk',
-        'Scion Help Desk',
-        'The nesi.apps user on the Pan login node',
-        'The root user on the Pan login node',
-        'Trust/Link Notifications',
-        'Tuakiri Notifications',
-        'Tuakiri Support',
-        'University of Auckland IT Operations Centre',
-        'University of Auckland Service Desk',
-        'University of Auckland Staff Service Centre',
-        'Zendesk Support',
-        ]
-
 suffixes = ['Jr.', 'Jr', 'Sr.', 'Sr', 'III.', 'III', '(Personal)']
 
 canonical_firstnames = {
@@ -57,6 +42,19 @@ canonical_firstnames = {
         'Tim': 'Timothy',
         'Tom': 'Thomas'
         }
+
+website = "nesi.zendesk.com"
+headers = { 'Content-Type' : 'application/json' }
+preferred_locale = "en-gb"
+
+print "This script requires that you have a so-called default password for Zendesk"
+print "(i.e., a different password than your single sign-on password through Tuakiri)."
+print "If you do not have such a password or have forgotten it, please visit:"
+print ""
+print "      https://{0}/access/help".format(website)
+print ""
+zdmyusername = raw_input("Please enter your Zendesk primary email address: ")
+zdmypassword = getpass.getpass("Please enter your Zendesk default password: ")
 
 main_users_url = "https://{0}/api/v2/users.json".format(website)
 users_url = main_users_url
@@ -86,8 +84,8 @@ for user in allusers:
         user['canonical_firstname'] = canonical_firstnames[user['firstname']]
     except KeyError:
         user['canonical_firstname'] = user['firstname']
-    for wl_entry in whitelist:
-        if user['name'] == wl_entry:
+    for uwe in user_whitelist:
+        if user['name'] == uwe:
             user['surname'] = None
             break
     else:
@@ -121,32 +119,36 @@ for user in allusers:
         
 for userone in allusers:
     for usertwo in allusers:
-        if userone['id'] >= usertwo['id']:
+        if int(userone['id']) >= int(usertwo['id']):
             continue
-        try:
-            if userone['surname'] is None and usertwo['surname'] is None:
-                if re.search(r'\s', userone['name']) is not None and userone['name'] == usertwo['name']:
-                    print "Suspected duplicates: \"{0}\" ({1}), \"{2}\" ({3})".format(userone['name'], userone['id'], usertwo['name'], usertwo['id'])
-            elif userone['surname'] == usertwo['surname']:
-                # Compare only the first three characters of the first names and the canonical first names
-                # Also compare middle names (if they are defined)
-                if userone['firstname'][:3].lower() == usertwo['firstname'][:3].lower() or userone['canonical_firstname'][:3].lower() == usertwo['canonical_firstname'][:3].lower():
-                    if userone['middlenames'] is not None and usertwo['middlenames'] is not None:
-                        mn_mismatch = False
-                        maxmiddlenames = max([len(userone['middlenames']), len(usertwo['middlenames'])])
-                        for mn in range(maxmiddlenames):
-                            try:
-                                if userone['middlenames'][mn][0].lower() != usertwo['middlenames'][mn][0].lower():
-                                    mn_mismatch = True
+        for dwe in duplicate_user_whitelist:
+            if int(userone['id']) == int(dwe[0]) and int(usertwo['id']) == int(dwe[1]):
+                break
+        else:
+            try:
+                if userone['surname'] is None and usertwo['surname'] is None:
+                    if re.search(r'\s', userone['name']) is not None and userone['name'] == usertwo['name']:
+                        print "Suspected duplicates: \"{0}\" ({1}), \"{2}\" ({3})".format(userone['name'], userone['id'], usertwo['name'], usertwo['id'])
+                elif userone['surname'] == usertwo['surname']:
+                    # Compare only the first three characters of the first names and the canonical first names
+                    # Also compare middle names (if they are defined)
+                    if userone['firstname'][:3].lower() == usertwo['firstname'][:3].lower() or userone['canonical_firstname'][:3].lower() == usertwo['canonical_firstname'][:3].lower():
+                        if userone['middlenames'] is not None and usertwo['middlenames'] is not None:
+                            mn_mismatch = False
+                            maxmiddlenames = max([len(userone['middlenames']), len(usertwo['middlenames'])])
+                            for mn in range(maxmiddlenames):
+                                try:
+                                    if userone['middlenames'][mn][0].lower() != usertwo['middlenames'][mn][0].lower():
+                                        mn_mismatch = True
+                                        break
+                                except ValueError:
                                     break
-                            except ValueError:
-                                break
-                        if mn_mismatch:
-                            continue
-                    print "Suspected duplicates: \"{0}\" ({1}), \"{2}\" ({3})".format(userone['name'], userone['id'], usertwo['name'], usertwo['id'])
-                        
-                        
-        except KeyError:
-            print "Error!"
-            print userone
-            print usertwo
+                            if mn_mismatch:
+                                continue
+                        print "Suspected duplicates: \"{0}\" ({1}), \"{2}\" ({3})".format(userone['name'], userone['id'], usertwo['name'], usertwo['id'])
+                            
+                            
+            except KeyError:
+                print "Error!"
+                print userone
+                print usertwo
