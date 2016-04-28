@@ -14,6 +14,7 @@ progdir = os.path.dirname(__file__)
 progname = os.path.basename(__file__)
 uwf = os.path.join(progdir, 'user_whitelist.txt')
 dwf = os.path.join(progdir, 'duplicate_user_whitelist.txt')
+cff = os.path.join(progdir, 'canonical_first_names.txt')
 #sys.stdout = codecs.getwriter('utf8')(sys.stdout)
 
 with open(uwf) as uwfh:
@@ -24,24 +25,11 @@ with open(dwf) as dwfh:
         pair = line.rstrip().split('\t')
         pair.sort(key=int)
         duplicate_user_whitelist.append(pair)
-
-print duplicate_user_whitelist
+with open(cff) as cffh:
+    canonical_firstnames = dict(line.strip().split('\t') for line in cffh)
 
 allusers = []
 suffixes = ['Jr.', 'Jr', 'Sr.', 'Sr', 'III.', 'III', '(Personal)']
-
-canonical_firstnames = {
-        'Ben': 'Benjamin',
-        'Chris': 'Christopher',
-        'Dan': 'Daniel',
-        'Dave': 'David',
-        'Matt': 'Matthew',
-        'Mike': 'Michael',
-        'Pete': 'Peter',
-        'Rob': 'Robert',
-        'Tim': 'Timothy',
-        'Tom': 'Thomas'
-        }
 
 website = "nesi.zendesk.com"
 headers = { 'Content-Type' : 'application/json' }
@@ -96,7 +84,7 @@ for user in allusers:
                     user['surname'] = name_components[-2]
                     if len(name_components) > 3:
                         user['middlenames'] = name_components[1:-2]
-                    print "Found suffixed name \"{0}\" -- assuming surname of \"{1}\"".format(user['name'],user['surname'])
+                    #print "Found suffixed name \"{0}\" -- assuming surname of \"{1}\"".format(user['name'],user['surname'])
                     break
             else:
                 user['surname'] = name_components[-1]
@@ -116,7 +104,9 @@ for user in allusers:
                 print "Error: User {0} found with precisely one comma in name. Canonical name: {1}?".format(user['name'], swapped_name)
             print "Please correct in Zendesk or add to whitelist."
             sys.exit(1)
-        
+
+dups = 0
+
 for userone in allusers:
     for usertwo in allusers:
         if int(userone['id']) >= int(usertwo['id']):
@@ -129,6 +119,7 @@ for userone in allusers:
                 if userone['surname'] is None and usertwo['surname'] is None:
                     if re.search(r'\s', userone['name']) is not None and userone['name'] == usertwo['name']:
                         print "Suspected duplicates: \"{0}\" ({1}), \"{2}\" ({3})".format(userone['name'], userone['id'], usertwo['name'], usertwo['id'])
+                        dups += 1
                 elif userone['surname'] == usertwo['surname']:
                     # Compare only the first three characters of the first names and the canonical first names
                     # Also compare middle names (if they are defined)
@@ -146,9 +137,16 @@ for userone in allusers:
                             if mn_mismatch:
                                 continue
                         print "Suspected duplicates: \"{0}\" ({1}), \"{2}\" ({3})".format(userone['name'], userone['id'], usertwo['name'], usertwo['id'])
-                            
-                            
+                        dups += 1
+            
             except KeyError:
                 print "Error!"
                 print userone
                 print usertwo
+
+if dups > 1:
+    print "There are {0} suspected duplicate Zendesk users.".format(str(dups))
+elif dups == 1:
+    print "There is one suspected duplicate Zendesk user."
+else:
+    print "There are no suspected duplicate Zendesk users."

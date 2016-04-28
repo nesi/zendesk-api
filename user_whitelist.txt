@@ -1,6 +1,8 @@
 LEAP Australia Support Desk
 Nagios, the Pan cluster monitor
 NIWA Service Desk
+Otago University Medical Students' Association Treasurer
+Otago University Medical Students' Association Webmaster
 Scion Help Desk
 The nesi.apps user on the Pan login node
 The root user on the Pan login node
