@@ -42,7 +42,7 @@ zdmyusername = raw_input("Please enter your Zendesk primary email address: ")
 zdmypassword = getpass.getpass("Please enter your Zendesk default password: ")
 
 categories = []
-main_categories_url = "https://{0}/api/v2/help_center/categories.json".format(website)
+main_categories_url = "https://{0}/api/v2/help_center/{1}/categories.json".format(website, preferred_locale)
 categories_url = main_categories_url
 while categories_url:
     try:
@@ -117,7 +117,7 @@ for filename in sys.argv[1:]:
             continue
         else:
             sections_in_category = []
-            main_sections_url = "https://{0}/api/v2/help_center/categories/{1}/sections.json".format(website,category_id)
+            main_sections_url = "https://{0}/api/v2/help_center/{1}/categories/{2}/sections.json".format(website,preferred_locale, category_id)
             sections_url = main_sections_url
             while sections_url:
                 try:
@@ -159,7 +159,7 @@ for filename in sys.argv[1:]:
                     # provides a "next_page" value for going to the next page of results.
                     # See https://support.zendesk.com/hc/en-us/articles/204371903-Zendesk-REST-API-tutorial-Backing-up-your-knowledge-base
                     articles_in_section = []
-                    main_articles_url = "https://{0}/api/v2/help_center/sections/{1}/articles.json".format(website,section_id)
+                    main_articles_url = "https://{0}/api/v2/help_center/{1}/sections/{2}/articles.json".format(website,preferred_locale, section_id)
                     articles_url = main_articles_url
                     while articles_url:
                         try:
@@ -168,8 +168,15 @@ for filename in sys.argv[1:]:
                         except ValueError:
                             print "Could not fetch JSON data from which to compile a list of articles. Exiting."
                             sys.exit(critical)
-                        for article in articles_page_content['articles']:
-                            articles_in_section.append(article)
+                        try:
+                            for article in articles_page_content['articles']:
+                                articles_in_section.append(article)
+                        except KeyError:
+                            print "JSON data from articles page is incomplete or erroneous. Exiting."
+                            print "JSON string follows:"
+                            print ""
+                            print articles_page_content
+                            sys.exit(critical)
                         articles_url = articles_page_content['next_page']
 
                     article_id = 0
