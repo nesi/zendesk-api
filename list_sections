@@ -52,7 +52,7 @@ zdmyusername = raw_input("Please enter your Zendesk primary email address: ")
 zdmypassword = getpass.getpass("Please enter your Zendesk default password: ")
 
 all_categories = []
-main_categories_url = "https://{0}/api/v2/help_center/categories.json".format(website)
+main_categories_url = "https://{0}/api/v2/help_center/{1}/categories.json".format(website, preferred_locale)
 categories_url = main_categories_url
 while categories_url:
     categories_page_content = requests.get(categories_url, auth=(zdmyusername, zdmypassword)).json()
@@ -61,7 +61,7 @@ while categories_url:
     categories_url = categories_page_content['next_page']
 
 all_sections = []
-main_sections_url = "https://{0}/api/v2/help_center/sections.json".format(website)
+main_sections_url = "https://{0}/api/v2/help_center/{1}/sections.json".format(website, preferred_locale)
 sections_url = main_sections_url
 while sections_url:
     sections_page_content = requests.get(sections_url, auth=(zdmyusername, zdmypassword)).json()
