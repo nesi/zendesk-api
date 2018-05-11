@@ -3,6 +3,8 @@ Ben	Benjamin
 Chris	Christopher
 Dan	Daniel
 Dave	David
+Don	Donald
+Liz	Elizabeth
 Matt	Matthew
 Mike	Michael
 Pete	Peter
