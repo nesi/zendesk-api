@@ -21,6 +21,9 @@ with open(uwf) as uwfh:
 duplicate_user_whitelist = []
 with open(dwf) as dwfh:
     for line in dwfh:
+        line = re.sub(r'\s*#.*$', '', line)
+        if re.match(r'^\s*$', line):
+            continue
         pair = line.rstrip().split('\t')
         pair.sort(key=int)
         duplicate_user_whitelist.append(pair)
