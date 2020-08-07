@@ -66,6 +66,7 @@ while users_url:
     users_url = users_page_content['next_page']
 
 # Perform some name integrity checks and canonicalise names
+badnamestrings = []
 for user in allusers:
     name_components = user['name'].split()
     user['firstname'] = name_components[0]
@@ -100,12 +101,16 @@ for user in allusers:
         commacount = revised_name.count(',')
         if commacount > 0:
             if commacount > 1:
-                print("Error: User {0} found with multiple commas in name!".format(user['name']))
+                badnamestrings.append("Error: User {0} found with multiple commas in name!".format(user['name']))
             else:
-                swapped_name = re.subn(r'^([^,]+),\s*([^,]+)$', r'\2 \1', revised_name)
-                print("Error: User {0} found with precisely one comma in name. Canonical name: {1}?".format(user['name'], swapped_name))
-            print("Please correct in Zendesk or add to whitelist.")
-            sys.exit(1)
+                swapped_name = re.sub(r'^([^,]+),\s*([^,]+)$', r'\2 \1', revised_name)
+                badnamestrings.append("Error: User {0} found with precisely one comma in name. Canonical name: {1}?".format(user['name'], swapped_name))
+
+if len(badnamestrings) > 0:
+    for line in badnamestrings:
+        print(line)
+    print("Please correct in Zendesk or add to whitelist.")
+    sys.exit(1)
 
 dups = 0
 
